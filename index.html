@@ -3,7 +3,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>MP4 to OGV Converter</title>
+    <title>MP4 to OGV Converter (Batch with Download All)</title>
     <style>
       body {
         font-family: sans-serif;
@@ -22,11 +22,15 @@
       #drop-area.dragover {
         border-color: #007bff;
       }
-      #download-link {
-        display: none;
-        margin-top: 20px;
+      .download-link {
+        display: block;
+        margin-top: 10px;
       }
       #progress {
+        margin-top: 20px;
+      }
+      #download-all {
+        display: none;
         margin-top: 20px;
       }
     </style>
@@ -35,20 +39,25 @@
     <h1 style="text-align: center">MP4 to OGV Converter</h1>
     <div id="drop-area">
       <p>
-        Drag & drop an MP4 file here<br />or<br />
-        <input type="file" id="fileElem" accept="video/mp4" />
+        Drag & drop MP4 files here<br />or<br />
+        <input type="file" id="fileElem" accept="video/mp4" multiple />
       </p>
       <div id="progress"></div>
-      <a id="download-link" href="#" download>Download OGV</a>
+      <div id="downloads"></div>
+      <button id="download-all">Download All as ZIP</button>
     </div>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.0/dist/ffmpeg.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
       const { createFFmpeg, fetchFile } = FFmpeg;
       const ffmpeg = createFFmpeg({ log: true });
       const dropArea = document.getElementById("drop-area");
       const fileElem = document.getElementById("fileElem");
       const progress = document.getElementById("progress");
-      const downloadLink = document.getElementById("download-link");
+      const downloads = document.getElementById("downloads");
+      const downloadAllBtn = document.getElementById("download-all");
+
+      let ogvFiles = []; // {filename, blob}
 
       // Drag & drop handlers
       dropArea.addEventListener("dragover", (e) => {
@@ -68,49 +77,84 @@
         handleFiles(e.target.files);
       });
 
-      async function handleFiles(files) {
-        if (!files.length) return;
-        const file = files[0];
-        if (file.type !== "video/mp4") {
-          progress.textContent = "Please select an MP4 file.";
+      async function handleFiles(fileList) {
+        if (!fileList.length) return;
+        const files = Array.from(fileList).filter(
+          (f) => f.type === "video/mp4"
+        );
+        if (!files.length) {
+          progress.textContent = "Please select MP4 files only.";
           return;
         }
         progress.textContent = "Loading FFmpeg...";
+        downloads.innerHTML = "";
+        ogvFiles = [];
+        downloadAllBtn.style.display = "none";
         if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
-        progress.textContent = "Converting... (this may take a while)";
-        downloadLink.style.display = "none";
-
-        // Write file to FS
-        ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file));
-        // Convert to OGV
-        try {
-          await ffmpeg.run(
-            "-i",
-            "input.mp4",
-            "-c:v",
-            "libtheora",
-            "-c:a",
-            "libvorbis",
-            "output.ogv"
-          );
-          const data = ffmpeg.FS("readFile", "output.ogv");
-          const url = URL.createObjectURL(
-            new Blob([data.buffer], { type: "video/ogg" })
-          );
-          downloadLink.href = url;
-          downloadLink.download = file.name.replace(/\.mp4$/i, ".ogv");
-          downloadLink.style.display = "inline-block";
-          progress.textContent = "Conversion complete!";
-        } catch (err) {
-          progress.textContent = "Conversion failed: " + err.message;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          progress.textContent = `Converting (${i + 1}/${files.length}): ${
+            file.name
+          }`;
+          const inputName = `input${i}.mp4`;
+          const outputName = file.name.replace(/\.mp4$/i, ".ogv");
+          try {
+            ffmpeg.FS("writeFile", inputName, await fetchFile(file));
+            await ffmpeg.run(
+              "-i",
+              inputName,
+              "-c:v",
+              "libtheora",
+              "-c:a",
+              "libvorbis",
+              outputName
+            );
+            const data = ffmpeg.FS("readFile", outputName);
+            const blob = new Blob([data.buffer], { type: "video/ogg" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = outputName;
+            a.textContent = `Download ${outputName}`;
+            a.className = "download-link";
+            downloads.appendChild(a);
+            ogvFiles.push({ filename: outputName, blob });
+            // Clean up FS
+            ffmpeg.FS("unlink", inputName);
+            ffmpeg.FS("unlink", outputName);
+          } catch (err) {
+            const errMsg = document.createElement("div");
+            errMsg.textContent = `Failed to convert ${file.name}: ${err.message}`;
+            downloads.appendChild(errMsg);
+          }
         }
-        // Clean up FS
-        ffmpeg.FS("unlink", "input.mp4");
-        try {
-          ffmpeg.FS("unlink", "output.ogv");
-        } catch {}
+        progress.textContent = "All conversions complete!";
+        if (ogvFiles.length > 0) {
+          downloadAllBtn.style.display = "inline-block";
+        }
       }
+
+      downloadAllBtn.addEventListener("click", async () => {
+        if (!ogvFiles.length) return;
+        downloadAllBtn.disabled = true;
+        downloadAllBtn.textContent = "Zipping...";
+        const zip = new JSZip();
+        ogvFiles.forEach(({ filename, blob }) => {
+          zip.file(filename, blob);
+        });
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "converted_ogv_files.zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        downloadAllBtn.disabled = false;
+        downloadAllBtn.textContent = "Download All as ZIP";
+      });
     </script>
   </body>
 </html>
