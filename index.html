@@ -1,0 +1,116 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MP4 to OGV Converter</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        background: #f7f7f7;
+      }
+      #drop-area {
+        border: 2px dashed #888;
+        border-radius: 8px;
+        width: 400px;
+        margin: 40px auto;
+        padding: 40px;
+        text-align: center;
+        background: #fff;
+        transition: border-color 0.2s;
+      }
+      #drop-area.dragover {
+        border-color: #007bff;
+      }
+      #download-link {
+        display: none;
+        margin-top: 20px;
+      }
+      #progress {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="text-align: center">MP4 to OGV Converter</h1>
+    <div id="drop-area">
+      <p>
+        Drag & drop an MP4 file here<br />or<br />
+        <input type="file" id="fileElem" accept="video/mp4" />
+      </p>
+      <div id="progress"></div>
+      <a id="download-link" href="#" download>Download OGV</a>
+    </div>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.0/dist/ffmpeg.min.js"></script>
+    <script>
+      const { createFFmpeg, fetchFile } = FFmpeg;
+      const ffmpeg = createFFmpeg({ log: true });
+      const dropArea = document.getElementById("drop-area");
+      const fileElem = document.getElementById("fileElem");
+      const progress = document.getElementById("progress");
+      const downloadLink = document.getElementById("download-link");
+
+      // Drag & drop handlers
+      dropArea.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropArea.classList.add("dragover");
+      });
+      dropArea.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dropArea.classList.remove("dragover");
+      });
+      dropArea.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropArea.classList.remove("dragover");
+        handleFiles(e.dataTransfer.files);
+      });
+      fileElem.addEventListener("change", (e) => {
+        handleFiles(e.target.files);
+      });
+
+      async function handleFiles(files) {
+        if (!files.length) return;
+        const file = files[0];
+        if (file.type !== "video/mp4") {
+          progress.textContent = "Please select an MP4 file.";
+          return;
+        }
+        progress.textContent = "Loading FFmpeg...";
+        if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+        progress.textContent = "Converting... (this may take a while)";
+        downloadLink.style.display = "none";
+
+        // Write file to FS
+        ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file));
+        // Convert to OGV
+        try {
+          await ffmpeg.run(
+            "-i",
+            "input.mp4",
+            "-c:v",
+            "libtheora",
+            "-c:a",
+            "libvorbis",
+            "output.ogv"
+          );
+          const data = ffmpeg.FS("readFile", "output.ogv");
+          const url = URL.createObjectURL(
+            new Blob([data.buffer], { type: "video/ogg" })
+          );
+          downloadLink.href = url;
+          downloadLink.download = file.name.replace(/\.mp4$/i, ".ogv");
+          downloadLink.style.display = "inline-block";
+          progress.textContent = "Conversion complete!";
+        } catch (err) {
+          progress.textContent = "Conversion failed: " + err.message;
+        }
+        // Clean up FS
+        ffmpeg.FS("unlink", "input.mp4");
+        try {
+          ffmpeg.FS("unlink", "output.ogv");
+        } catch {}
+      }
+    </script>
+  </body>
+</html>
