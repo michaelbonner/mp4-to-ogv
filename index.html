@@ -114,8 +114,12 @@
               inputName,
               "-c:v",
               "libtheora",
+              "-qscale:v",
+              "5",
               "-c:a",
               "libvorbis",
+              "-b:a",
+              "128k",
               outputOgvName
             );
             const ogvData = ffmpeg.FS("readFile", outputOgvName);
