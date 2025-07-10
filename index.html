@@ -3,7 +3,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>MP4 to OGV Converter (Batch with Download All)</title>
+    <title>MP4 to OGV Converter (Batch with Thumbnails)</title>
     <style>
       body {
         font-family: sans-serif;
@@ -36,7 +36,9 @@
     </style>
   </head>
   <body>
-    <h1 style="text-align: center">MP4 to OGV Converter</h1>
+    <h1 style="text-align: center">
+      MP4 to OGV Converter (Batch with Thumbnails)
+    </h1>
     <div id="drop-area">
       <p>
         Drag & drop MP4 files here<br />or<br />
@@ -58,6 +60,7 @@
       const downloadAllBtn = document.getElementById("download-all");
 
       let ogvFiles = []; // {filename, blob}
+      let thumbnailFiles = []; // {filename, blob}
 
       // Drag & drop handlers
       dropArea.addEventListener("dragover", (e) => {
@@ -89,6 +92,7 @@
         progress.textContent = "Loading FFmpeg...";
         downloads.innerHTML = "";
         ogvFiles = [];
+        thumbnailFiles = [];
         downloadAllBtn.style.display = "none";
         if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
@@ -98,9 +102,13 @@
             file.name
           }`;
           const inputName = `input${i}.mp4`;
-          const outputName = file.name.replace(/\.mp4$/i, ".ogv");
+          const outputOgvName = file.name.replace(/\.mp4$/i, ".ogv");
+          const baseName = file.name.replace(/\.mp4$/i, "");
+          const outputThumbnailName = `${baseName}-thumbnail.jpg`;
+
           try {
             ffmpeg.FS("writeFile", inputName, await fetchFile(file));
+            // Convert to OGV
             await ffmpeg.run(
               "-i",
               inputName,
@@ -108,21 +116,50 @@
               "libtheora",
               "-c:a",
               "libvorbis",
-              outputName
+              outputOgvName
             );
-            const data = ffmpeg.FS("readFile", outputName);
-            const blob = new Blob([data.buffer], { type: "video/ogg" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = outputName;
-            a.textContent = `Download ${outputName}`;
-            a.className = "download-link";
-            downloads.appendChild(a);
-            ogvFiles.push({ filename: outputName, blob });
+            const ogvData = ffmpeg.FS("readFile", outputOgvName);
+            const ogvBlob = new Blob([ogvData.buffer], { type: "video/ogg" });
+            const ogvUrl = URL.createObjectURL(ogvBlob);
+            const aOgv = document.createElement("a");
+            aOgv.href = ogvUrl;
+            aOgv.download = outputOgvName;
+            aOgv.textContent = `Download ${outputOgvName}`;
+            aOgv.className = "download-link";
+            downloads.appendChild(aOgv);
+            ogvFiles.push({ filename: outputOgvName, blob: ogvBlob });
+
+            // Extract first frame as jpg
+            // -ss 0 seeks to the first frame, -frames:v 1 extracts one frame
+            await ffmpeg.run(
+              "-i",
+              inputName,
+              "-ss",
+              "0",
+              "-frames:v",
+              "1",
+              outputThumbnailName
+            );
+            const thumbData = ffmpeg.FS("readFile", outputThumbnailName);
+            const thumbBlob = new Blob([thumbData.buffer], {
+              type: "image/jpeg",
+            });
+            const thumbUrl = URL.createObjectURL(thumbBlob);
+            const aThumb = document.createElement("a");
+            aThumb.href = thumbUrl;
+            aThumb.download = outputThumbnailName;
+            aThumb.textContent = `Download ${outputThumbnailName}`;
+            aThumb.className = "download-link";
+            downloads.appendChild(aThumb);
+            thumbnailFiles.push({
+              filename: outputThumbnailName,
+              blob: thumbBlob,
+            });
+
             // Clean up FS
             ffmpeg.FS("unlink", inputName);
-            ffmpeg.FS("unlink", outputName);
+            ffmpeg.FS("unlink", outputOgvName);
+            ffmpeg.FS("unlink", outputThumbnailName);
           } catch (err) {
             const errMsg = document.createElement("div");
             errMsg.textContent = `Failed to convert ${file.name}: ${err.message}`;
@@ -130,24 +167,27 @@
           }
         }
         progress.textContent = "All conversions complete!";
-        if (ogvFiles.length > 0) {
+        if (ogvFiles.length > 0 || thumbnailFiles.length > 0) {
           downloadAllBtn.style.display = "inline-block";
         }
       }
 
       downloadAllBtn.addEventListener("click", async () => {
-        if (!ogvFiles.length) return;
+        if (!ogvFiles.length && !thumbnailFiles.length) return;
         downloadAllBtn.disabled = true;
         downloadAllBtn.textContent = "Zipping...";
         const zip = new JSZip();
         ogvFiles.forEach(({ filename, blob }) => {
           zip.file(filename, blob);
         });
+        thumbnailFiles.forEach(({ filename, blob }) => {
+          zip.file(filename, blob);
+        });
         const content = await zip.generateAsync({ type: "blob" });
         const url = URL.createObjectURL(content);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "converted_ogv_files.zip";
+        a.download = "converted_ogv_files_with_thumbnails.zip";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
