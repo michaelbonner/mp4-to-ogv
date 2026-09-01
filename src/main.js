@@ -31,6 +31,12 @@ dropArea.addEventListener("drop", (e) => {
   dropArea.classList.remove("dragover");
   handleFiles(e.dataTransfer.files);
 });
+// Clicking anywhere in the drop area opens the file picker, except on the
+// controls that already do something on click.
+dropArea.addEventListener("click", (e) => {
+  if (e.target.closest("label, input, button, a")) return;
+  fileElem.click();
+});
 fileElem.addEventListener("change", (e) => {
   handleFiles(e.target.files);
 });
@@ -111,7 +117,7 @@ async function handleFiles(fileList) {
       aOgv.download = outputOgvName;
       aOgv.textContent = `Download ${outputOgvName}`;
       aOgv.className = "download-link text-sm";
-      downloads.appendChild(aOgv);
+      fileProgress.appendChild(aOgv);
       ogvFiles.push({ filename: outputOgvName, blob: ogvBlob });
 
       // Extract first frame as jpg
@@ -137,7 +143,7 @@ async function handleFiles(fileList) {
       aThumb.download = outputThumbnailName;
       aThumb.textContent = `Download ${outputThumbnailName}`;
       aThumb.className = "download-link text-sm";
-      downloads.appendChild(aThumb);
+      fileProgress.appendChild(aThumb);
       thumbnailFiles.push({
         filename: outputThumbnailName,
         blob: thumbBlob,
@@ -156,8 +162,9 @@ async function handleFiles(fileList) {
       progressFill.style.backgroundColor = "#C10008";
       progressText.textContent = `Error: ${err.message}`;
       const errMsg = document.createElement("div");
+      errMsg.className = "mt-2 text-xs text-red-700";
       errMsg.textContent = `Failed to convert ${file.name}: ${err.message}`;
-      downloads.appendChild(errMsg);
+      fileProgress.appendChild(errMsg);
     }
   }
 
